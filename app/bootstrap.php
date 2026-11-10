@@ -2,9 +2,40 @@
 
 declare(strict_types=1);
 
+$redisSessionDsn = getenv('REDIS_SESSION_DSN');
+if (is_string($redisSessionDsn) && $redisSessionDsn !== '') {
+    if (!extension_loaded('redis')) {
+        throw new RuntimeException('The Redis extension is required when REDIS_SESSION_DSN is configured.');
+    }
+
+    ini_set('session.save_handler', 'redis');
+    ini_set('session.save_path', $redisSessionDsn);
+}
+
+$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (getenv('VERCEL') === '1');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $isHttps,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
 
-const APP_URL = '/swd/09-php-shop';
+$configuredAppUrl = getenv('APP_URL');
+if ($configuredAppUrl !== false) {
+    $appUrl = rtrim($configuredAppUrl, '/');
+} else {
+    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+    $isLocalHost = $host === ''
+        || $host === 'localhost'
+        || str_starts_with($host, 'localhost:')
+        || $host === '127.0.0.1'
+        || str_starts_with($host, '127.0.0.1:');
+    $appUrl = $isLocalHost ? '/swd/09-php-shop' : '';
+}
+define('APP_URL', $appUrl);
 
 function getDatabase(): PDO
 {
@@ -14,27 +45,75 @@ function getDatabase(): PDO
         return $pdo;
     }
 
-    $host = getenv('DB_HOST') ?: '127.0.0.1';
     $dbname = getenv('DB_NAME') ?: 'swd_shop';
     $user = getenv('DB_USER') ?: 'root';
     $pass = getenv('DB_PASS') ?: '';
 
-    $rootPdo = new PDO(sprintf('mysql:host=%s;charset=utf8mb4', $host), $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-
-    $rootPdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbname}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-    $dsn = sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', $host, $dbname);
-
-    $pdo = new PDO($dsn, $user, $pass, [
+    $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-    ]);
+    ];
+    $temporarySslCaPath = null;
+    $sslCaContents = getenv('DB_SSL_CA');
+    $sslCaPath = getenv('DB_SSL_CA_PATH');
+    if (is_string($sslCaContents) && $sslCaContents !== '') {
+        if (!defined('PDO::MYSQL_ATTR_SSL_CA')) {
+            throw new RuntimeException('PDO MySQL SSL support is required when DB_SSL_CA is configured.');
+        }
 
-    return $pdo;
+        $temporarySslCaPath = tempnam(sys_get_temp_dir(), 'swd-shop-ca-');
+        if ($temporarySslCaPath === false) {
+            throw new RuntimeException('Could not write the configured MySQL CA certificate.');
+        }
+
+        if (file_put_contents($temporarySslCaPath, $sslCaContents, LOCK_EX) === false) {
+            unlink($temporarySslCaPath);
+            throw new RuntimeException('Could not write the configured MySQL CA certificate.');
+        }
+        $sslCaPath = $temporarySslCaPath;
+    }
+
+    if (is_string($sslCaPath) && $sslCaPath !== '') {
+        if (!defined('PDO::MYSQL_ATTR_SSL_CA')) {
+            throw new RuntimeException('PDO MySQL SSL support is required when DB_SSL_CA_PATH is configured.');
+        }
+        $options[PDO::MYSQL_ATTR_SSL_CA] = $sslCaPath;
+
+        if (!defined('PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT')) {
+            throw new RuntimeException('PDO MySQL certificate verification is unavailable.');
+        }
+        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+    }
+
+    try {
+        $dsn = getenv('DB_DSN');
+        if (!is_string($dsn) || $dsn === '') {
+            $host = getenv('DB_HOST') ?: '127.0.0.1';
+            $port = getenv('DB_PORT') ?: '3306';
+            if (!ctype_digit((string) $port)) {
+                throw new RuntimeException('DB_PORT must be a valid port number.');
+            }
+
+            $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $dbname);
+
+            if (getenv('DB_HOST') === false) {
+                if (!preg_match('/^[A-Za-z0-9_]+$/', $dbname)) {
+                    throw new RuntimeException('DB_NAME may contain only letters, numbers, and underscores.');
+                }
+
+                $rootPdo = new PDO(sprintf('mysql:host=%s;port=%s;charset=utf8mb4', $host, $port), $user, $pass, $options);
+                $rootPdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbname}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            }
+        }
+
+        $pdo = new PDO($dsn, $user, $pass, $options);
+        return $pdo;
+    } finally {
+        if ($temporarySslCaPath !== null && is_file($temporarySslCaPath) && !unlink($temporarySslCaPath)) {
+            error_log('Could not remove temporary MySQL CA certificate.');
+        }
+    }
 }
 
 function e(mixed $value): string

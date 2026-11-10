@@ -59,8 +59,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        if ($newStatus === 'cancelled' && $order['status'] !== 'cancelled') {
-            $pdo->beginTransaction();
+        $transitions = [
+            'pending' => ['paid', 'cancelled'],
+            'paid' => ['shipped', 'cancelled'],
+            'shipped' => ['delivered'],
+            'delivered' => [],
+            'cancelled' => [],
+        ];
+
+        $pdo->beginTransaction();
+        $lockedOrder = $pdo->prepare('SELECT status FROM orders WHERE id = :id FOR UPDATE');
+        $lockedOrder->execute([':id' => $orderId]);
+        $currentOrder = $lockedOrder->fetch();
+        if (!$currentOrder) {
+            throw new RuntimeException('This order no longer exists.');
+        }
+
+        $currentStatus = (string) $currentOrder['status'];
+        if (!in_array($newStatus, $transitions[$currentStatus] ?? [], true)) {
+            throw new RuntimeException('That status change is not allowed.');
+        }
+
+        if ($newStatus === 'cancelled') {
             $cancelledItems = $pdo->prepare(
                 'SELECT product_id, quantity FROM order_items WHERE order_id = :order_id FOR UPDATE'
             );
@@ -89,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':status' => $newStatus,
             ':id' => $orderId,
         ]);
+        $pdo->commit();
 
         $_SESSION['flash'] = ['message' => 'Order status updated.', 'type' => 'success'];
         header('Location: ' . APP_URL . '/admin/order.php?id=' . $orderId);
@@ -97,7 +118,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        $errors[] = $e->getMessage();
+        if ($e instanceof PDOException || $e instanceof Error) {
+            error_log('Admin order update failed: ' . $e->getMessage());
+            $errors[] = 'The order could not be updated. Please try again.';
+        } else {
+            $errors[] = $e->getMessage();
+        }
     }
 }
 

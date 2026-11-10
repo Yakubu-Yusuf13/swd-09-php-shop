@@ -4,7 +4,16 @@ declare(strict_types=1);
 
 function admin_password_hash(): string
 {
-    return (string) (getenv('ADMIN_PASSWORD_HASH') ?: '$2y$10$EUUPJx8CV7bVEXwU50ckl.2Dpk1Y3lZDmsh2KM5u2rfIdDsrO8q4C');
+    $passwordHash = getenv('ADMIN_PASSWORD_HASH');
+    if (is_string($passwordHash) && $passwordHash !== '') {
+        return $passwordHash;
+    }
+
+    if (getenv('VERCEL') === '1') {
+        throw new RuntimeException('Set ADMIN_PASSWORD_HASH in the Vercel project environment variables.');
+    }
+
+    return '$2y$10$EUUPJx8CV7bVEXwU50ckl.2Dpk1Y3lZDmsh2KM5u2rfIdDsrO8q4C';
 }
 
 function admin_is_logged_in(): bool

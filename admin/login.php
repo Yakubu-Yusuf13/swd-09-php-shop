@@ -9,19 +9,41 @@ $pageTitle = 'Admin login';
 $errors = [];
 $username = 'admin';
 $next = trim((string) ($_GET['next'] ?? ''));
+$nextPath = parse_url($next, PHP_URL_PATH);
+$adminPath = rtrim(APP_URL, '/') . '/admin/';
+if (
+    $next !== ''
+    && (
+        !is_string($nextPath)
+        || parse_url($next, PHP_URL_SCHEME) !== null
+        || str_starts_with($next, '//')
+        || !str_starts_with($nextPath, $adminPath)
+    )
+) {
+    $next = '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim((string) ($_POST['username'] ?? 'admin'));
     $password = (string) ($_POST['password'] ?? '');
 
-    if (admin_login($username, $password)) {
-        $_SESSION['admin_logged_in'] = true;
-        $redirect = $next !== '' ? $next : APP_URL . '/admin/index.php';
-        header('Location: ' . $redirect);
-        exit;
+    try {
+        verify_csrf();
+    } catch (RuntimeException) {
+        $errors['login'] = 'Your login form expired. Please try again.';
     }
 
-    $errors['login'] = 'Invalid username or password.';
+    if ($errors === []) {
+        if (admin_login($username, $password)) {
+            session_regenerate_id(true);
+            $_SESSION['admin_logged_in'] = true;
+            $redirect = $next !== '' ? $next : APP_URL . '/admin/index.php';
+            header('Location: ' . $redirect);
+            exit;
+        }
+
+        $errors['login'] = 'Invalid username or password.';
+    }
 }
 
 include __DIR__ . '/../partials/header.php';
@@ -38,6 +60,7 @@ include __DIR__ . '/../partials/header.php';
         <?php endif; ?>
 
         <form method="POST" class="auth-form" action="<?= APP_URL ?>/admin/login.php<?= $next !== '' ? '?next=' . e(urlencode($next)) : '' ?>">
+            <?= csrf_field() ?>
             <label for="username">Username</label>
             <input id="username" name="username" type="text" value="<?= e($username) ?>" required>
 

@@ -41,6 +41,7 @@ $pdo->exec("
 $pdo->exec("
     CREATE TABLE IF NOT EXISTS orders (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        reference VARCHAR(32) NOT NULL UNIQUE,
         customer_name VARCHAR(150) NOT NULL,
         customer_email VARCHAR(150) NOT NULL,
         customer_phone VARCHAR(50) DEFAULT NULL,
@@ -56,12 +57,43 @@ $pdo->exec("
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         order_id INT UNSIGNED NOT NULL,
         product_id INT UNSIGNED NOT NULL,
+        product_name VARCHAR(150) NOT NULL,
         quantity INT NOT NULL,
         unit_price DECIMAL(10,2) NOT NULL,
         FOREIGN KEY (order_id) REFERENCES orders(id),
         FOREIGN KEY (product_id) REFERENCES products(id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 ");
+
+$orderReferenceColumn = $pdo->query("SHOW COLUMNS FROM orders LIKE 'reference'")->fetch();
+if (!$orderReferenceColumn) {
+    $pdo->exec('ALTER TABLE orders ADD reference VARCHAR(32) NULL');
+    $pdo->exec('ALTER TABLE orders ADD UNIQUE KEY uq_orders_reference (reference)');
+
+    $legacyOrders = $pdo->query('SELECT id FROM orders WHERE reference IS NULL')->fetchAll(PDO::FETCH_COLUMN);
+    $updateReference = $pdo->prepare('UPDATE orders SET reference = :reference WHERE id = :id');
+    foreach ($legacyOrders as $orderId) {
+        $updateReference->execute([
+            ':reference' => 'ORD-LEGACY-' . (int) $orderId,
+            ':id' => (int) $orderId,
+        ]);
+    }
+
+    $pdo->exec('ALTER TABLE orders MODIFY reference VARCHAR(32) NOT NULL');
+}
+
+$productNameColumn = $pdo->query("SHOW COLUMNS FROM order_items LIKE 'product_name'")->fetch();
+if (!$productNameColumn) {
+    $pdo->exec('ALTER TABLE order_items ADD product_name VARCHAR(150) NULL');
+    $pdo->exec(
+        'UPDATE order_items oi
+         INNER JOIN products p ON p.id = oi.product_id
+         SET oi.product_name = p.name
+         WHERE oi.product_name IS NULL'
+    );
+    $pdo->exec("UPDATE order_items SET product_name = 'Product' WHERE product_name IS NULL");
+    $pdo->exec('ALTER TABLE order_items MODIFY product_name VARCHAR(150) NOT NULL');
+}
 
 $categories = [
     ['name' => 'Electronics', 'slug' => 'electronics'],
@@ -73,9 +105,11 @@ $categories = [
 
 $insertCategory = $pdo->prepare('INSERT INTO categories (name, slug) VALUES (:name, :slug) ON DUPLICATE KEY UPDATE name = VALUES(name)');
 $categoryIds = [];
+$findCategoryId = $pdo->prepare('SELECT id FROM categories WHERE slug = :slug');
 foreach ($categories as $category) {
     $insertCategory->execute($category);
-    $categoryIds[$category['slug']] = (int) $pdo->lastInsertId();
+    $findCategoryId->execute([':slug' => $category['slug']]);
+    $categoryIds[$category['slug']] = (int) $findCategoryId->fetchColumn();
 }
 
 $products = [

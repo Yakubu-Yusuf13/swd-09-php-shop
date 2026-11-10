@@ -2,7 +2,21 @@
 
 declare(strict_types=1);
 
+set_exception_handler(static function (Throwable $exception): void {
+    error_log('Unhandled application exception: ' . $exception);
+
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/html; charset=utf-8');
+    }
+
+    echo '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Temporarily unavailable</title><body><main><h1>Temporarily unavailable</h1><p>We could not load the shop right now. Please try again later.</p></main></body></html>';
+});
+
 $redisSessionDsn = getenv('REDIS_SESSION_DSN');
+if (getenv('VERCEL') === '1' && (!is_string($redisSessionDsn) || $redisSessionDsn === '')) {
+    throw new RuntimeException('Set REDIS_SESSION_DSN in the Vercel project environment variables.');
+}
 if (is_string($redisSessionDsn) && $redisSessionDsn !== '') {
     if (!extension_loaded('redis')) {
         throw new RuntimeException('The Redis extension is required when REDIS_SESSION_DSN is configured.');
@@ -89,6 +103,11 @@ function getDatabase(): PDO
     try {
         $dsn = getenv('DB_DSN');
         if (!is_string($dsn) || $dsn === '') {
+            $configuredHost = getenv('DB_HOST');
+            if (getenv('VERCEL') === '1' && (!is_string($configuredHost) || $configuredHost === '')) {
+                throw new RuntimeException('Set DB_HOST or DB_DSN in the Vercel project environment variables.');
+            }
+
             $host = getenv('DB_HOST') ?: '127.0.0.1';
             $port = getenv('DB_PORT') ?: '3306';
             if (!ctype_digit((string) $port)) {

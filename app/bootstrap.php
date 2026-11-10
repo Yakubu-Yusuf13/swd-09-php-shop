@@ -92,28 +92,4 @@ function flash(?string $message = null, string $type = 'success'): ?array
     return $flash;
 }
 
-function cart_count(): int
-{
-    $cart = $_SESSION['cart'] ?? [];
-    $total = 0;
-
-    foreach ($cart as $item) {
-        $qty = (int) ($item['qty'] ?? 0);
-        $total += $qty;
-    }
-
-    return $total;
-}
-
-function add_to_cart(int $productId, int $quantity): void
-{
-    $cart = $_SESSION['cart'] ?? [];
-    $current = (int) ($cart[$productId]['qty'] ?? 0);
-    $cart[$productId] = ['qty' => $current + max(1, $quantity)];
-    $_SESSION['cart'] = $cart;
-}
-
-function empty_cart(): void
-{
-    $_SESSION['cart'] = [];
-}
+require_once __DIR__ . '/cart.php';

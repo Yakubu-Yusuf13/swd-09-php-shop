@@ -37,15 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         verify_csrf();
 
-        $qty = max(1, (int) ($_POST['quantity'] ?? 1));
-        $qty = min($qty, $availableCount > 0 ? $availableCount : 1);
-
-        if ($availableCount <= 0) {
-            throw new RuntimeException('This product is out of stock.');
-        }
-
-        add_to_cart((int) $product['id'], $qty);
-        flash('Product added to cart successfully.', 'success');
+        $adjusted = cart_add((int) $product['id'], (int) ($_POST['quantity'] ?? 1));
+        flash(
+            $adjusted
+                ? 'Quantity adjusted to the available stock and added to your cart.'
+                : 'Product added to cart successfully.',
+            'success'
+        );
         header('Location: ' . APP_URL . '/cart.php');
         exit;
     } catch (Throwable $e) {

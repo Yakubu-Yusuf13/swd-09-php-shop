@@ -59,7 +59,7 @@ Suggested services:
 - MySQL: Railway MySQL or another managed MySQL provider that allows connections from Vercel.
 - Redis: Upstash Redis with TLS enabled.
 
-1. Create a hosted MySQL database and import the schema from `database.sql`. Then run `seed.php` once from a trusted CLI with `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASS` set to the hosted database values; setting `DB_HOST` prevents the script from trying to create a database. This creates the tables and seeds the 15 products. Record the provider's CA certificate path if its MySQL service requires one.
+1. Create a hosted MySQL database and import `database.sql` into it. This creates the tables and inserts the five categories and 15 catalog products. The inserts are safe to re-run and do not overwrite existing catalog records. Alternatively, import the schema then run `seed.php` once from a trusted CLI with `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASS` set to the hosted database values; setting `DB_HOST` prevents the script from trying to create a database. Record the provider's CA certificate path if its MySQL service requires one.
 2. Create a Redis database and copy its TLS endpoint and password. Do not commit credentials or post them in chat.
 3. Sign in at [Vercel](https://vercel.com), choose **Add New → Project**, and import `Yakubu-Yusuf13/swd-09-php-shop` from GitHub. Set the project framework/preset to **Container** if it is not detected automatically.
 4. In **Project Settings → Environment Variables**, set the following for Production (and Preview if desired):
@@ -85,7 +85,7 @@ Suggested services:
    Add only the resulting hash to Vercel's environment settings. Do not commit it. The local development login remains `admin` / `admin123`; that fallback is disabled on Vercel.
 6. Click **Deploy** in Vercel. Once deployment finishes, open its assigned `.vercel.app` URL and verify the shop, checkout database connection, cart session, and admin login.
 
-Vercel does not provide the external MySQL/Redis services automatically. Set up those providers and Vercel environment variables in their dashboards; never place database or Redis secrets in this repository. The `database.sql` file contains schema only and does not drop existing databases or tables.
+Vercel does not provide the external MySQL/Redis services automatically. Set up those providers and Vercel environment variables in their dashboards; never place database or Redis secrets in this repository. The `database.sql` file does not drop existing databases or tables.
 
 ## Project structure
 
